@@ -1,0 +1,74 @@
+{
+  "id": "solidcraft-gears",
+  "name": "Gears",
+  "version": "0.1.0",
+  "description": "Involute spur gear generator: module, teeth, pressure angle, face width, bore and profile shift. Builds an editable sketch and features.",
+  "capabilities": [
+    "commands@0.1"
+  ],
+  "runtime": {
+    "module": "plugin.wasm",
+    "entries": [
+      {
+        "name": "make-gear",
+        "effect": "edit",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "module": {
+              "type": "number",
+              "description": "Module in mm (pitch diameter = module x teeth)",
+              "default": 2
+            },
+            "teeth": {
+              "type": "integer",
+              "description": "Number of teeth (8 to 80)",
+              "default": 20
+            },
+            "pressure_angle": {
+              "type": "number",
+              "description": "Pressure angle in degrees",
+              "default": 20
+            },
+            "face_width": {
+              "type": "number",
+              "description": "Gear thickness in mm",
+              "default": 10
+            },
+            "bore_diameter": {
+              "type": "number",
+              "description": "Centre bore diameter in mm, 0 for none",
+              "default": 0
+            },
+            "profile_shift": {
+              "type": "number",
+              "description": "Profile shift coefficient x (outer diameter = module x (teeth + 2 + 2x))",
+              "default": 0
+            }
+          }
+        },
+        "slots": [
+          {
+            "kind": "menu",
+            "name": "Plugins"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      "solid.cylinder",
+      "solid.extrude",
+      "solid.pattern.circular",
+      "sketch.create",
+      "sketch.line",
+      "sketch.arc.three_point",
+      "sketch.spline.fit_point",
+      "sketch.finish"
+    ],
+    "limits": {
+      "fuel": 200000000,
+      "memory_mib": 64,
+      "deadline_ms": 30000
+    }
+  }
+}
