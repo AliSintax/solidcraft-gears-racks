@@ -1,7 +1,7 @@
 {
   "id": "solidcraft-gears",
   "name": "Gears",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Involute spur gear generator: module, teeth, pressure angle, face width, bore and profile shift. Builds an editable sketch and features.",
   "capabilities": [
     "commands@0.1"
@@ -14,36 +14,64 @@
         "effect": "edit",
         "input_schema": {
           "type": "object",
+          "required": [
+            "module",
+            "teeth",
+            "face_width",
+            "pressure_angle"
+          ],
           "properties": {
             "module": {
               "type": "number",
-              "description": "Module in mm (pitch diameter = module x teeth)",
-              "default": 2
+              "title": "Module",
+              "description": "Module m. Pitch diameter = module x teeth",
+              "default": 2,
+              "minimum": 0.1,
+              "maximum": 100,
+              "unit": "mm"
             },
             "teeth": {
               "type": "integer",
-              "description": "Number of teeth (8 to 80)",
-              "default": 20
-            },
-            "pressure_angle": {
-              "type": "number",
-              "description": "Pressure angle in degrees",
-              "default": 20
+              "title": "Teeth",
+              "description": "Number of teeth",
+              "default": 20,
+              "minimum": 8,
+              "maximum": 80
             },
             "face_width": {
               "type": "number",
-              "description": "Gear thickness in mm",
-              "default": 10
+              "title": "Face width",
+              "description": "Gear thickness",
+              "default": 10,
+              "minimum": 0.1,
+              "maximum": 1000,
+              "unit": "mm"
+            },
+            "pressure_angle": {
+              "type": "number",
+              "title": "Pressure angle",
+              "description": "Pressure angle of the tooth flanks",
+              "default": 20,
+              "minimum": 10,
+              "maximum": 30,
+              "unit": "°"
             },
             "bore_diameter": {
               "type": "number",
-              "description": "Centre bore diameter in mm, 0 for none",
-              "default": 0
+              "title": "Bore diameter",
+              "description": "Centre hole diameter, 0 for none",
+              "default": 0,
+              "minimum": 0,
+              "maximum": 1000,
+              "unit": "mm"
             },
             "profile_shift": {
               "type": "number",
-              "description": "Profile shift coefficient x (outer diameter = module x (teeth + 2 + 2x))",
-              "default": 0
+              "title": "Profile shift",
+              "description": "Profile shift coefficient x; outer diameter = module x (teeth + 2 + 2x)",
+              "default": 0,
+              "minimum": -1,
+              "maximum": 1
             }
           }
         },
