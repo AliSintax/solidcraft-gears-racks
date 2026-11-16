@@ -1,8 +1,8 @@
 [package]
 name = "solidcraft-gears"
-version = "0.1.1"
+version = "0.4.3"
 edition = "2021"
-description = "Involute spur gear generator, a SolidCraft plugin"
+description = "Involute spur gear and rack generator, a SolidCraft plugin"
 license = "MIT"
 publish = false
 

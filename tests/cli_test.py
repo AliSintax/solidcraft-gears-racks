@@ -38,7 +38,7 @@ APPROVAL = approval()
 
 
 def gear(params):
-    return {"command": "plugin.run", "params": {"path": PKG, "approval": APPROVAL, "entry": "make-gear", "params": params}}
+    return {"command": "plugin.run", "params": {"path": PKG, "approval": APPROVAL, "entry": "gears", "params": params}}
 
 
 def check(name, ok, detail=""):
@@ -58,7 +58,7 @@ def case(label, p, save=None):
     m, z = p.get("module", 2), p["teeth"]
     x = p.get("profile_shift", 0)
     bore = p.get("bore_diameter", 0)
-    steps = [gear(p), {"command": "inspect.measure", "params": {}}, {"command": "model.faces", "params": {"body": "Gear"}}]
+    steps = [gear(p), {"command": "inspect.measure", "params": {}}, {"command": "model.faces", "params": {"body": "Gear"}}, {"command": "component.list", "params": {}}]
     res = run(steps, save=save)
     body = res[1]["bodies"][0]
     faces = res[2]["faces"] if isinstance(res[2], dict) else res[2]
@@ -67,6 +67,7 @@ def case(label, p, save=None):
     tips = [r for r in radii if abs(r - ra) < 1e-6]
     roots = [r for r in radii if abs(r - rf) < 1e-6]
     check(f"{label}: one closed solid", len(res[1]["bodies"]) == 1 and body["closed"])
+    check(f"{label}: built in its own component", "Gear" in json.dumps(res[3]))
     check(f"{label}: tooth count (tip faces) = {z}", len(tips) == z, f"got {len(tips)}")
     check(f"{label}: root faces (one or two per gap, cut by the pattern seam) for {z} gaps", len(roots) in (z, 2 * z), f"got {len(roots)}")
     check(f"{label}: outer diameter = m(z+2+2x) = {2*ra:g}", abs(2 * max(radii) - 2 * ra) < 1e-6, f"got {2*max(radii):.6f}")
@@ -88,6 +89,8 @@ def pitch_check(label, p, save):
     a = math.radians(p.get("pressure_angle", 20))
     rp, w, h = m * z / 2, 0.02, p.get("face_width", 10)
     steps = [
+        # the gear lives in its own component; build the ring there so the combine sees both
+        {"command": "component.activate", "params": {"component": "Gear"}},
         {"command": "solid.cylinder", "params": {"radius": rp + w, "height": h, "operation": "new", "body_name": "Ring"}},
         {"command": "solid.cylinder", "params": {"radius": rp - w, "height": h, "operation": "cut", "targets": ["Ring"]}},
         {"command": "solid.combine", "params": {"target": "Ring", "tools": ["Gear"], "operation": "intersect", "keep_tools": True}},
@@ -116,6 +119,36 @@ for label, p in {
     pitch_check(label, p, sc)
     reopened = run([{"command": "inspect.measure", "params": {}}], inp=sc)[0]
     check(f"{label}: saved .sc reopens with one closed body", len(reopened["bodies"]) == 1 and reopened["bodies"][0]["closed"])
+
+def rack(params):
+    return {"command": "plugin.run", "params": {"path": PKG, "approval": APPROVAL, "entry": "racks", "params": params}}
+
+
+def rack_case(label, p):
+    m, z = p.get("module", 2), p["teeth"]
+    a = math.radians(p.get("pressure_angle", 20))
+    fw, bh = p.get("face_width", 10), p.get("body_height", 6)
+    pitch = math.pi * m
+    hr, ht = pitch / 4 + 1.25 * m * math.tan(a), pitch / 4 - m * math.tan(a)
+    res = run([rack(p), {"command": "inspect.measure", "params": {}}, {"command": "component.list", "params": {}}])
+    bodies = res[1]["bodies"]
+    body = bodies[0]
+    bb = body["bbox"]
+    check(f"{label}: one closed solid", len(bodies) == 1 and body["closed"])
+    check(f"{label}: built in its own component", "Rack" in json.dumps(res[2]))
+    check(f"{label}: length = z pi m = {z*pitch:g}", abs(bb["max"][0] - bb["min"][0] - z * pitch) < 1e-6)
+    check(f"{label}: height = 2.25 m + body", abs(bb["max"][1] - bb["min"][1] - (2.25 * m + bh)) < 1e-6)
+    check(f"{label}: tips at y = m, face width", abs(bb["max"][1] - m) < 1e-6 and abs(bb["max"][2] - bb["min"][2] - fw) < 1e-6)
+    vol = fw * (z * pitch * bh + z * (hr + ht) * 2.25 * m)
+    check(f"{label}: volume {vol:.2f}", abs(body["volume_mm3"] - vol) < 1e-3 * vol, f"got {body['volume_mm3']:.2f}")
+
+
+for label, p in {
+    "rack z10 m2": dict(module=2, teeth=10, face_width=10, body_height=6),
+    "rack z1 m1": dict(module=1, teeth=1, face_width=5, body_height=3),
+    "rack z40 m1.5 a25": dict(module=1.5, teeth=40, pressure_angle=25, face_width=8, body_height=4),
+}.items():
+    rack_case(label, p)
 
 import shutil
 shutil.rmtree(TMP)

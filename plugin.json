@@ -1,8 +1,8 @@
 {
   "id": "solidcraft-gears",
   "name": "Gears",
-  "version": "0.1.1",
-  "description": "Involute spur gear generator: module, teeth, pressure angle, face width, bore and profile shift. Builds an editable sketch and features.",
+  "version": "0.4.3",
+  "description": "Involute spur gear and rack generator. Each part is built in its own component as an editable sketch and features.",
   "capabilities": [
     "commands@0.1"
   ],
@@ -10,17 +10,24 @@
     "module": "plugin.wasm",
     "entries": [
       {
-        "name": "make-gear",
+        "name": "gears",
         "effect": "edit",
         "input_schema": {
           "type": "object",
           "required": [
+            "name",
             "module",
             "teeth",
             "face_width",
             "pressure_angle"
           ],
           "properties": {
+            "name": {
+              "type": "string",
+              "title": "Name",
+              "description": "Name of the component and body",
+              "default": "Gear"
+            },
             "module": {
               "type": "number",
               "title": "Module",
@@ -78,20 +85,95 @@
         "slots": [
           {
             "kind": "menu",
-            "name": "Plugins"
+            "name": "Gears"
+          }
+        ]
+      },
+      {
+        "name": "racks",
+        "effect": "edit",
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "name",
+            "module",
+            "teeth",
+            "pressure_angle",
+            "face_width",
+            "body_height"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "title": "Name",
+              "description": "Name of the component and body",
+              "default": "Rack"
+            },
+            "module": {
+              "type": "number",
+              "title": "Module",
+              "description": "Module m. Circular pitch = pi x module",
+              "default": 2,
+              "minimum": 0.1,
+              "maximum": 100,
+              "unit": "mm"
+            },
+            "teeth": {
+              "type": "integer",
+              "title": "Teeth",
+              "description": "Number of teeth; length = teeth x pi x module",
+              "default": 10,
+              "minimum": 1,
+              "maximum": 100
+            },
+            "pressure_angle": {
+              "type": "number",
+              "title": "Pressure angle",
+              "description": "Pressure angle of the tooth flanks",
+              "default": 20,
+              "minimum": 10,
+              "maximum": 30,
+              "unit": "°"
+            },
+            "face_width": {
+              "type": "number",
+              "title": "Face width",
+              "description": "Rack thickness",
+              "default": 10,
+              "minimum": 0.1,
+              "maximum": 1000,
+              "unit": "mm"
+            },
+            "body_height": {
+              "type": "number",
+              "title": "Body height",
+              "description": "Rack only. Material below the root line",
+              "default": 6,
+              "minimum": 0.1,
+              "maximum": 1000,
+              "unit": "mm"
+            }
+          }
+        },
+        "slots": [
+          {
+            "kind": "menu",
+            "name": "Racks"
           }
         ]
       }
     ],
     "commands": [
+      "component.activate",
+      "component.create",
+      "sketch.arc.three_point",
+      "sketch.create",
+      "sketch.finish",
+      "sketch.line",
+      "sketch.spline.fit_point",
       "solid.cylinder",
       "solid.extrude",
-      "solid.pattern.circular",
-      "sketch.create",
-      "sketch.line",
-      "sketch.arc.three_point",
-      "sketch.spline.fit_point",
-      "sketch.finish"
+      "solid.pattern.circular"
     ],
     "limits": {
       "fuel": 200000000,
