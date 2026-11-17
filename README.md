@@ -2,6 +2,8 @@
 
 # SolidCraft Gears
 
+Based on [solidcraft-gears](https://github.com/bherbruck/solidcraft-gears) by bherbruck (MIT). This version adds racks, one component per part, and separate Gears and Racks menu entries.
+
 An involute spur gear and rack generator for [SolidCraft](https://github.com/tangency-labs/solidcraft). The plugin adds two items to SolidCraft's plugins menu, **Gears** and **Racks**. Each one opens a dialog, draws the profile in a sketch and extrudes it, using ordinary SolidCraft commands. What lands in your design is a normal timeline (a sketch, an extrude, and for gears a hub, a circular pattern and an optional bore), so you can open any of those features afterwards and change them. It is not a mesh.
 
 Every run builds its part **in its own component**, so a gear and a rack (or two gears) stay independent and can be moved, constrained and exported separately.
