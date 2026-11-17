@@ -57,25 +57,27 @@ def cylinders(faces):
 def case(label, p, save=None):
     m, z = p.get("module", 2), p["teeth"]
     x = p.get("profile_shift", 0)
+    ha, hf = p.get("addendum", 1.0), p.get("dedendum", 1.25)
     bore = p.get("bore_diameter", 0)
     steps = [gear(p), {"command": "inspect.measure", "params": {}}, {"command": "model.faces", "params": {"body": "Gear"}}, {"command": "component.list", "params": {}}]
     res = run(steps, save=save)
     body = res[1]["bodies"][0]
     faces = res[2]["faces"] if isinstance(res[2], dict) else res[2]
     radii = cylinders(faces)
-    ra, rf = m * (z + 2 + 2 * x) / 2, m * (z - 2.5 + 2 * x) / 2
+    ra, rf = m * (z + 2 * ha + 2 * x) / 2, m * (z - 2 * hf + 2 * x) / 2
     tips = [r for r in radii if abs(r - ra) < 1e-6]
     roots = [r for r in radii if abs(r - rf) < 1e-6]
     check(f"{label}: one closed solid", len(res[1]["bodies"]) == 1 and body["closed"])
     check(f"{label}: built in its own component", "Gear" in json.dumps(res[3]))
     check(f"{label}: tooth count (tip faces) = {z}", len(tips) == z, f"got {len(tips)}")
     check(f"{label}: root faces (one or two per gap, cut by the pattern seam) for {z} gaps", len(roots) in (z, 2 * z), f"got {len(roots)}")
-    check(f"{label}: outer diameter = m(z+2+2x) = {2*ra:g}", abs(2 * max(radii) - 2 * ra) < 1e-6, f"got {2*max(radii):.6f}")
+    check(f"{label}: outer diameter = m(z+2ha+2x) = {2*ra:g}", abs(2 * max(radii) - 2 * ra) < 1e-6, f"got {2*max(radii):.6f}")
     bb = body["bbox"]
     span = max(bb["max"][0] - bb["min"][0], bb["max"][1] - bb["min"][1])
     check(f"{label}: bounding box within outer diameter", span <= 2 * ra + 1e-6 and span > 2 * ra * 0.97, f"{span:.4f}")
     if bore:
         check(f"{label}: bore diameter = {bore:g}", any(abs(2 * r - bore) < 1e-6 for r in radii))
+    check(f"{label}: root diameter = m(z-2hf+2x) = {2*rf:g}", min(radii) <= rf + 1e-6 and any(abs(r - rf) < 1e-6 for r in radii))
     check(f"{label}: face width", abs(bb["max"][2] - bb["min"][2] - p.get("face_width", 10)) < 1e-6)
     return res
 
@@ -113,6 +115,8 @@ for label, p in {
     "z40 m1 a25": dict(module=1, teeth=40, pressure_angle=25, face_width=5, bore_diameter=5),
     "z9 m5": dict(module=5, teeth=9, face_width=15, bore_diameter=10),
     "z72 m1": dict(module=1, teeth=72, face_width=4, bore_diameter=3),
+    "z20 m2 ha1.2 hf1.5": dict(module=2, teeth=20, face_width=10, bore_diameter=6, addendum=1.2, dedendum=1.5),
+    "z30 m1 ha0.8 hf1.0": dict(module=1, teeth=30, face_width=6, addendum=0.8, dedendum=1.0),
 }.items():
     sc = os.path.join(TMP, "out", label.split()[0] + ".sc")
     case(label, p, save=sc)
@@ -129,7 +133,8 @@ def rack_case(label, p):
     a = math.radians(p.get("pressure_angle", 20))
     fw, bh = p.get("face_width", 10), p.get("body_height", 6)
     pitch = math.pi * m
-    hr, ht = pitch / 4 + 1.25 * m * math.tan(a), pitch / 4 - m * math.tan(a)
+    ha, hf = p.get("addendum", 1.0), p.get("dedendum", 1.25)
+    hr, ht = pitch / 4 + hf * m * math.tan(a), pitch / 4 - ha * m * math.tan(a)
     res = run([rack(p), {"command": "inspect.measure", "params": {}}, {"command": "component.list", "params": {}}])
     bodies = res[1]["bodies"]
     body = bodies[0]
@@ -137,9 +142,9 @@ def rack_case(label, p):
     check(f"{label}: one closed solid", len(bodies) == 1 and body["closed"])
     check(f"{label}: built in its own component", "Rack" in json.dumps(res[2]))
     check(f"{label}: length = z pi m = {z*pitch:g}", abs(bb["max"][0] - bb["min"][0] - z * pitch) < 1e-6)
-    check(f"{label}: height = 2.25 m + body", abs(bb["max"][1] - bb["min"][1] - (2.25 * m + bh)) < 1e-6)
-    check(f"{label}: tips at y = m, face width", abs(bb["max"][1] - m) < 1e-6 and abs(bb["max"][2] - bb["min"][2] - fw) < 1e-6)
-    vol = fw * (z * pitch * bh + z * (hr + ht) * 2.25 * m)
+    check(f"{label}: height = (ha + hf) m + body", abs(bb["max"][1] - bb["min"][1] - ((ha + hf) * m + bh)) < 1e-6)
+    check(f"{label}: tips at y = ha m, face width", abs(bb["max"][1] - ha * m) < 1e-6 and abs(bb["max"][2] - bb["min"][2] - fw) < 1e-6)
+    vol = fw * (z * pitch * bh + z * (hr + ht) * (ha + hf) * m)
     check(f"{label}: volume {vol:.2f}", abs(body["volume_mm3"] - vol) < 1e-3 * vol, f"got {body['volume_mm3']:.2f}")
 
 
@@ -147,6 +152,7 @@ for label, p in {
     "rack z10 m2": dict(module=2, teeth=10, face_width=10, body_height=6),
     "rack z1 m1": dict(module=1, teeth=1, face_width=5, body_height=3),
     "rack z40 m1.5 a25": dict(module=1.5, teeth=40, pressure_angle=25, face_width=8, body_height=4),
+    "rack z6 m2 ha0.8 hf1.5": dict(module=2, teeth=6, face_width=10, body_height=6, addendum=0.8, dedendum=1.5),
 }.items():
     rack_case(label, p)
 

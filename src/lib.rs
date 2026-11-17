@@ -27,6 +27,8 @@ pub fn parse_params(v: &Value) -> Params {
         face_width: num("face_width", 10.0),
         bore: num("bore_diameter", 0.0),
         shift: num("profile_shift", 0.0),
+        addendum: num("addendum", 1.0),
+        dedendum: num("dedendum", 1.25),
     }
 }
 
@@ -81,6 +83,8 @@ pub fn make_gear<R: Runner>(r: &mut R, p: &Params, name: &str) -> Result<Value, 
         "root_diameter": d.root_d,
         "face_width": p.face_width,
         "bore_diameter": p.bore,
+        "addendum": p.addendum,
+        "dedendum": p.dedendum,
         "root_fillet_radius": w.root_fillet,
     }))
 }
@@ -93,6 +97,8 @@ pub fn parse_rack_params(v: &Value) -> RackParams {
         pressure_angle_deg: num("pressure_angle", 20.0),
         face_width: num("face_width", 10.0),
         body_height: num("body_height", 6.0),
+        addendum: num("addendum", 1.0),
+        dedendum: num("dedendum", 1.25),
     }
 }
 
@@ -122,6 +128,8 @@ pub fn make_rack<R: Runner>(r: &mut R, p: &RackParams, name: &str) -> Result<Val
         "root_y": d.root_y,
         "total_height": d.tip_y - d.bottom_y,
         "tip_width": d.tip_width,
+        "addendum": p.addendum,
+        "dedendum": p.dedendum,
         "face_width": p.face_width,
     }))
 }
@@ -368,12 +376,15 @@ mod tests {
         let required = |e: &Value| -> Vec<String> {
             e["input_schema"]["required"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect()
         };
-        assert_eq!(required(&entries[0]), ["name", "module", "teeth", "face_width", "pressure_angle"]);
-        assert_eq!(required(&entries[1]), ["name", "module", "teeth", "pressure_angle", "face_width", "body_height"]);
+        assert_eq!(required(&entries[0]), ["name", "module", "teeth", "face_width", "pressure_angle", "addendum", "dedendum"]);
+        assert_eq!(required(&entries[1]), ["name", "module", "teeth", "pressure_angle", "face_width", "addendum", "dedendum", "body_height"]);
         for (e, default) in entries.iter().zip(["Gear", "Rack"]) {
             let props = &e["input_schema"]["properties"];
             // a required name needs a default so the form is valid as it opens
             assert_eq!(props["name"]["default"], default);
+            // addendum and dedendum are offered on both parts, with the standard values as defaults
+            assert_eq!(props["addendum"]["default"], 1.0);
+            assert_eq!(props["dedendum"]["default"], 1.25);
             for k in required(e) {
                 assert!(props.get(&k).is_some(), "required {k} has no property");
             }
@@ -383,6 +394,45 @@ mod tests {
         assert!(props(0).get("body_height").is_none());
         assert!(props(1).get("bore_diameter").is_none() && props(1).get("profile_shift").is_none());
         assert!(!text.contains("\"enum\""));
+    }
+
+    #[test]
+    fn addendum_and_dedendum_are_read_and_checked() {
+        match parse_request(GEARS, &json!({"addendum": 1.2, "dedendum": 1.5})).unwrap() {
+            Request::Gear(p, _) => assert_eq!((p.addendum, p.dedendum), (1.2, 1.5)),
+            _ => panic!(),
+        }
+        match parse_request(RACKS, &json!({"addendum": 0.8, "dedendum": 1.0})).unwrap() {
+            Request::Rack(p, _) => assert_eq!((p.addendum, p.dedendum), (0.8, 1.0)),
+            _ => panic!(),
+        }
+        // defaults are the standard 1 and 1.25 for both parts
+        match parse_request(GEARS, &json!({})).unwrap() {
+            Request::Gear(p, _) => assert_eq!((p.addendum, p.dedendum), (1.0, 1.25)),
+            _ => panic!(),
+        }
+        match parse_request(RACKS, &json!({})).unwrap() {
+            Request::Rack(p, _) => assert_eq!((p.addendum, p.dedendum), (1.0, 1.25)),
+            _ => panic!(),
+        }
+        for entry in [GEARS, RACKS] {
+            assert_eq!(parse_request(entry, &json!({"addendum": 5})).unwrap_err().0, "addendum");
+            assert_eq!(parse_request(entry, &json!({"dedendum": 0.1})).unwrap_err().0, "dedendum");
+        }
+    }
+
+    #[test]
+    fn the_given_heights_reach_the_host() {
+        let mut r = Rec(vec![]);
+        make(&mut r, &parse_request(RACKS, &json!({"module": 2, "teeth": 2, "addendum": 0.8, "dedendum": 1.5})).unwrap()).unwrap();
+        let ys: Vec<f64> = r.0.iter().filter(|(c, _)| c == "sketch.line").flat_map(|(_, a)| a["points"].as_array().unwrap().clone()).map(|p| p[1].as_f64().unwrap()).collect();
+        let (hi, lo) = (ys.iter().cloned().fold(f64::MIN, f64::max), ys.iter().cloned().fold(f64::MAX, f64::min));
+        assert!((hi - 1.6).abs() < 1e-9, "{hi}");
+        assert!((lo - (-3.0 - 6.0)).abs() < 1e-9, "{lo}");
+        let mut g = Rec(vec![]);
+        let out = make(&mut g, &parse_request(GEARS, &json!({"module": 2, "teeth": 20, "addendum": 1.2, "dedendum": 1.5})).unwrap()).unwrap();
+        assert!((out["outer_diameter"].as_f64().unwrap() - 44.8).abs() < 1e-9);
+        assert!((out["root_diameter"].as_f64().unwrap() - 34.0).abs() < 1e-9);
     }
 
     #[allow(non_snake_case)]

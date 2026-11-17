@@ -7,7 +7,8 @@
 //!
 //! Definitions used:
 //! * circular pitch `p = pi m`
-//! * addendum `m`, dedendum `1.25 m`, flanks inclined `a` (the pressure angle) from the tooth axis
+//! * addendum `ha m`, dedendum `hf m` (1 and 1.25 are standard), flanks inclined `a` (the pressure
+//!   angle) from the tooth axis
 //! * half tooth width at height `y` above the pitch line: `p/4 - y tan(a)`
 
 use std::f64::consts::PI;
@@ -22,6 +23,10 @@ pub struct RackParams {
     pub face_width: f64,
     /// Material below the root line.
     pub body_height: f64,
+    /// Addendum coefficient: tooth height above the pitch line, in modules.
+    pub addendum: f64,
+    /// Dedendum coefficient: tooth depth below the pitch line, in modules.
+    pub dedendum: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -45,11 +50,11 @@ pub fn dims(p: &RackParams) -> RackDims {
     RackDims {
         pitch,
         length: pitch * p.teeth as f64,
-        tip_y: m,
-        root_y: -1.25 * m,
-        bottom_y: -1.25 * m - p.body_height,
-        tip_width: pitch / 2.0 - 2.0 * m * t,
-        root_land: pitch / 2.0 - 2.5 * m * t,
+        tip_y: p.addendum * m,
+        root_y: -p.dedendum * m,
+        bottom_y: -p.dedendum * m - p.body_height,
+        tip_width: pitch / 2.0 - 2.0 * p.addendum * m * t,
+        root_land: pitch / 2.0 - 2.0 * p.dedendum * m * t,
     }
 }
 
@@ -67,12 +72,22 @@ pub fn validate(p: &RackParams) -> Result<(), (String, String)> {
     if !(p.face_width.is_finite() && p.face_width > 0.0) {
         return bad("face_width", "must be positive");
     }
+    if !(p.addendum.is_finite() && (0.3..=2.0).contains(&p.addendum)) {
+        return bad("addendum", "must be between 0.3 and 2 (times the module)");
+    }
+    if !(p.dedendum.is_finite() && (0.3..=2.5).contains(&p.dedendum)) {
+        return bad("dedendum", "must be between 0.3 and 2.5 (times the module)");
+    }
     if !(p.body_height.is_finite() && p.body_height > 0.0) {
         return bad("body_height", "must be positive");
     }
     let d = dims(p);
-    if d.tip_width <= 0.0 || d.root_land <= 0.0 {
-        return bad("pressure_angle", "teeth would come to a point or overlap");
+    // keep a sliver of at least 2% of the module so no edge collapses
+    if d.tip_width < 0.02 * p.module {
+        return bad("addendum", "the tooth tip would come to a point; lower the addendum or the pressure angle");
+    }
+    if d.root_land < 0.02 * p.module {
+        return bad("dedendum", "the teeth would touch at the root; lower the dedendum or the pressure angle");
     }
     Ok(())
 }
@@ -83,8 +98,8 @@ pub fn outline(p: &RackParams) -> Vec<P> {
     let m = p.module;
     let d = dims(p);
     let t = p.pressure_angle_deg.to_radians().tan();
-    let half_root = d.pitch / 4.0 + 1.25 * m * t;
-    let half_tip = d.pitch / 4.0 - m * t;
+    let half_root = d.pitch / 4.0 + p.dedendum * m * t;
+    let half_tip = d.pitch / 4.0 - p.addendum * m * t;
     let mut v: Vec<P> = vec![[0.0, d.root_y]];
     for i in 0..p.teeth {
         let xc = d.pitch * (i as f64 + 0.5);
@@ -103,7 +118,15 @@ pub fn outline(p: &RackParams) -> Vec<P> {
 mod tests {
     use super::*;
     fn p(z: u32) -> RackParams {
-        RackParams { module: 2.0, teeth: z, pressure_angle_deg: 20.0, face_width: 10.0, body_height: 6.0 }
+        RackParams {
+            module: 2.0,
+            teeth: z,
+            pressure_angle_deg: 20.0,
+            face_width: 10.0,
+            body_height: 6.0,
+            addendum: 1.0,
+            dedendum: 1.25,
+        }
     }
     fn dist(a: P, b: P) -> f64 {
         ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt()
@@ -147,6 +170,59 @@ mod tests {
         assert!((d.length - 10.0 * PI * 2.0).abs() < 1e-9);
         assert!((d.tip_y - 2.0).abs() < 1e-12 && (d.root_y + 2.5).abs() < 1e-12);
         assert!((d.bottom_y + 8.5).abs() < 1e-12);
+    }
+    #[test]
+    fn addendum_and_dedendum_set_the_tooth_height() {
+        let mut q = p(3);
+        q.addendum = 0.8;
+        q.dedendum = 1.5;
+        let d = dims(&q);
+        assert!((d.tip_y - 1.6).abs() < 1e-12 && (d.root_y + 3.0).abs() < 1e-12);
+        assert!((d.bottom_y + 9.0).abs() < 1e-12);
+        let v = outline(&q);
+        // tooth 1: root_l, tip_l, tip_r, root_r
+        let (rl, tl, tr, rr) = (v[5], v[6], v[7], v[8]);
+        assert!((tl[1] - 1.6).abs() < 1e-12 && (rl[1] + 3.0).abs() < 1e-12);
+        // the thickness on the pitch line is still pi m / 2, whatever the tooth height
+        let cross = |a: P, b: P| a[0] + (b[0] - a[0]) * (0.0 - a[1]) / (b[1] - a[1]);
+        let w = cross(rr, tr) - cross(rl, tl);
+        assert!((w - PI).abs() < 1e-9, "{w}");
+        // flank angle unchanged
+        let ang = ((tl[0] - rl[0]) / (tl[1] - rl[1])).atan().to_degrees().abs();
+        assert!((ang - 20.0).abs() < 1e-9, "{ang}");
+    }
+    #[test]
+    fn no_degenerate_edges_for_a_range_of_heights() {
+        for ha in [0.3, 0.8, 1.0, 1.5] {
+            for hf in [0.3, 1.0, 1.25, 1.6] {
+                let mut q = p(4);
+                q.addendum = ha;
+                q.dedendum = hf;
+                validate(&q).unwrap();
+                let v = outline(&q);
+                for i in 0..v.len() {
+                    assert!(dist(v[i], v[(i + 1) % v.len()]) > 1e-6, "ha{ha} hf{hf} edge {i}");
+                }
+            }
+        }
+    }
+    #[test]
+    fn rejects_bad_addendum_and_dedendum() {
+        let mut q = p(5);
+        q.addendum = 0.0;
+        assert_eq!(validate(&q).unwrap_err().0, "addendum");
+        q = p(5);
+        q.dedendum = 3.0;
+        assert_eq!(validate(&q).unwrap_err().0, "dedendum");
+        // 30 degrees and a tall tooth: the tip or the root would vanish
+        q = p(5);
+        q.pressure_angle_deg = 30.0;
+        q.addendum = 1.5;
+        assert_eq!(validate(&q).unwrap_err().0, "addendum");
+        q = p(5);
+        q.pressure_angle_deg = 30.0;
+        q.dedendum = 1.6;
+        assert_eq!(validate(&q).unwrap_err().0, "dedendum");
     }
     #[test]
     fn rejects_bad_input() {

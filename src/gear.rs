@@ -8,7 +8,8 @@
 //! * involute function `inv(a) = tan(a) - a`; a point of the involute at radius `rho`
 //!   has pressure angle `acos(rb / rho)` and lies `inv` of that past the start of the curve
 //! * tooth thickness on the pitch circle `s = m (pi/2 + 2 x tan a)` (x is the profile shift)
-//! * addendum radius `ra = m (z/2 + 1 + x)`, root radius `rf = m (z/2 - 1.25 + x)`
+//! * addendum radius `ra = m (z/2 + ha + x)`, root radius `rf = m (z/2 - hf + x)`, where `ha` and
+//!   `hf` are the addendum and dedendum coefficients (multiples of the module; 1 and 1.25 are standard)
 
 use std::f64::consts::PI;
 
@@ -22,6 +23,10 @@ pub struct Params {
     pub face_width: f64,
     pub bore: f64,
     pub shift: f64,
+    /// Addendum coefficient: tooth height above the pitch circle, in modules.
+    pub addendum: f64,
+    /// Dedendum coefficient: tooth depth below the pitch circle, in modules.
+    pub dedendum: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -38,8 +43,8 @@ pub fn dims(p: &Params) -> Dims {
     Dims {
         pitch_d: p.module * z,
         base_d: p.module * z * a.cos(),
-        outer_d: p.module * (z + 2.0 + 2.0 * p.shift),
-        root_d: p.module * (z - 2.5 + 2.0 * p.shift),
+        outer_d: p.module * (z + 2.0 * p.addendum + 2.0 * p.shift),
+        root_d: p.module * (z - 2.0 * p.dedendum + 2.0 * p.shift),
     }
 }
 
@@ -57,6 +62,12 @@ pub fn validate(p: &Params) -> Result<(), (String, String)> {
     if !(p.face_width.is_finite() && p.face_width > 0.0) {
         return bad("face_width", "must be positive");
     }
+    if !(p.addendum.is_finite() && (0.3..=2.0).contains(&p.addendum)) {
+        return bad("addendum", "must be between 0.3 and 2 (times the module)");
+    }
+    if !(p.dedendum.is_finite() && (0.3..=2.5).contains(&p.dedendum)) {
+        return bad("dedendum", "must be between 0.3 and 2.5 (times the module)");
+    }
     if !(p.shift.is_finite() && (-1.0..=1.0).contains(&p.shift)) {
         return bad("profile_shift", "must be between -1 and 1");
     }
@@ -69,8 +80,8 @@ pub fn validate(p: &Params) -> Result<(), (String, String)> {
     }
     if p.pressure_angle_deg.to_radians().cos() * d.pitch_d >= d.outer_d {
         return bad(
-            "profile_shift",
-            "tooth would be shorter than its base circle",
+            "addendum",
+            "the tooth tip would be at or below the base circle; raise the addendum or lower the profile shift",
         );
     }
     Ok(())
@@ -112,8 +123,8 @@ pub fn wedge(p: &Params) -> Result<Wedge, String> {
     let alpha = p.pressure_angle_deg.to_radians();
     let r_p = m * z / 2.0;
     let rb = r_p * alpha.cos();
-    let ra = m * (z / 2.0 + 1.0 + p.shift);
-    let rf = m * (z / 2.0 - 1.25 + p.shift);
+    let ra = m * (z / 2.0 + p.addendum + p.shift);
+    let rf = m * (z / 2.0 - p.dedendum + p.shift);
     let h = PI / z;
     // half tooth angle on the pitch circle
     let half_pitch = (PI / 2.0 + 2.0 * p.shift * alpha.tan()) / z;
@@ -125,10 +136,10 @@ pub fn wedge(p: &Params) -> Result<Wedge, String> {
     };
     let psi_a = psi(ra);
     if psi_a * ra < 0.05 * m {
-        return Err("the tooth comes to a point; lower the profile shift".into());
+        return Err("the tooth comes to a point; lower the addendum or the profile shift".into());
     }
     if psi(rf.max(rb)) >= 0.97 * h {
-        return Err("the teeth would overlap at the root; lower the profile shift".into());
+        return Err("the teeth would overlap at the root; adjust the dedendum or the profile shift".into());
     }
     // flank point at radius rho on the +angle side (mirrored later)
     let flank = |rho: f64| -> P { polar(rho, psi(rho)) };
@@ -168,7 +179,7 @@ pub fn wedge(p: &Params) -> Result<Wedge, String> {
         }
         rho_f *= 0.7;
     }
-    let phi_c = found.ok_or("no room for the root fillet; lower the profile shift")?;
+    let phi_c = found.ok_or("no room for the root fillet; adjust the dedendum or the profile shift")?;
     let c = polar(rf + rho_f, phi_c);
     let (_, ti) = near(c);
     let t_pt = samples[ti];
@@ -265,6 +276,8 @@ mod tests {
             face_width: 10.0,
             bore: 0.0,
             shift: 0.0,
+            addendum: 1.0,
+            dedendum: 1.25,
         }
     }
     #[test]
@@ -293,6 +306,96 @@ mod tests {
             }
         }
         let _ = found;
+    }
+    #[test]
+    fn addendum_and_dedendum_move_the_radii() {
+        let mut q = p(20);
+        q.addendum = 1.2;
+        q.dedendum = 1.5;
+        let d = dims(&q);
+        assert!((d.outer_d - 2.0 * (20.0 + 2.4)).abs() < 1e-9, "{}", d.outer_d);
+        assert!((d.root_d - 2.0 * (20.0 - 3.0)).abs() < 1e-9, "{}", d.root_d);
+        // the tip arc passes through (ra, 0) and the root arcs lie on rf
+        let w = wedge(&q).unwrap();
+        let (ra, rf) = (d.outer_d / 2.0, d.root_d / 2.0);
+        assert!(w.segs.iter().any(|s| matches!(s, Seg::Arc(_, _, t) if (t[0] - ra).abs() < 1e-9 && t[1].abs() < 1e-9)));
+        assert!(w.segs.iter().any(|s| matches!(s, Seg::Arc(a, _, _) if ((a[0] * a[0] + a[1] * a[1]).sqrt() - rf).abs() < 1e-9)));
+    }
+    #[test]
+    fn tooth_thickness_does_not_depend_on_addendum_or_dedendum() {
+        for (ha, hf) in [(0.8, 1.0), (1.0, 1.25), (1.3, 1.6)] {
+            let mut q = p(24);
+            q.addendum = ha;
+            q.dedendum = hf;
+            let rp = 24.0;
+            let w = wedge(&q).unwrap();
+            for s in &w.segs {
+                if let Seg::Spline(pts) = s {
+                    for c in pts {
+                        let r = (c[0] * c[0] + c[1] * c[1]).sqrt();
+                        if (r - rp).abs() < 0.05 {
+                            let ang = c[1].atan2(c[0]).abs();
+                            assert!((rp * ang - PI * 2.0 / 4.0).abs() < 0.06, "{ha} {hf}: {}", rp * ang);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn wedges_build_for_a_range_of_addendum_and_dedendum() {
+        for z in [12, 20, 40] {
+            for ha in [0.6, 0.8, 1.0, 1.2] {
+                for hf in [0.9, 1.0, 1.25, 1.5] {
+                    let mut q = p(z);
+                    q.addendum = ha;
+                    q.dedendum = hf;
+                    validate(&q).unwrap();
+                    wedge(&q).unwrap_or_else(|e| panic!("z{z} ha{ha} hf{hf}: {e}"));
+                }
+            }
+        }
+    }
+    #[test]
+    fn extremes_give_a_result_or_a_message_never_a_panic() {
+        let mut ok = 0;
+        for z in [8, 9, 20, 80] {
+            for ha in [0.3, 1.0, 2.0] {
+                for hf in [0.3, 1.25, 2.5] {
+                    for x in [-1.0, 0.0, 1.0] {
+                        let mut q = p(z);
+                        q.addendum = ha;
+                        q.dedendum = hf;
+                        q.shift = x;
+                        if validate(&q).is_ok() {
+                            match wedge(&q) {
+                                Ok(w) => {
+                                    ok += 1;
+                                    assert!(w.root_fillet > 0.0 && w.root_fillet.is_finite());
+                                }
+                                Err(e) => assert!(!e.is_empty()),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(ok > 20, "{ok}");
+    }
+    #[test]
+    fn rejects_bad_addendum_and_dedendum() {
+        let mut q = p(20);
+        q.addendum = 0.1;
+        assert_eq!(validate(&q).unwrap_err().0, "addendum");
+        q = p(20);
+        q.addendum = 2.5;
+        assert_eq!(validate(&q).unwrap_err().0, "addendum");
+        q = p(20);
+        q.dedendum = 3.0;
+        assert_eq!(validate(&q).unwrap_err().0, "dedendum");
+        q = p(20);
+        q.dedendum = f64::NAN;
+        assert_eq!(validate(&q).unwrap_err().0, "dedendum");
     }
     #[test]
     fn wedges_build_for_many_counts() {

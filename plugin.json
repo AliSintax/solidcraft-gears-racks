@@ -1,8 +1,8 @@
 {
   "id": "solidcraft-gears",
   "name": "Gears",
-  "version": "0.4.3",
-  "description": "Involute spur gear and rack generator. Each part is built in its own component as an editable sketch and features.",
+  "version": "0.5.0",
+  "description": "Involute spur gear and rack generator with adjustable addendum and dedendum. Each part is built in its own component as an editable sketch and features.",
   "capabilities": [
     "commands@0.1"
   ],
@@ -19,7 +19,9 @@
             "module",
             "teeth",
             "face_width",
-            "pressure_angle"
+            "pressure_angle",
+            "addendum",
+            "dedendum"
           ],
           "properties": {
             "name": {
@@ -79,6 +81,22 @@
               "default": 0,
               "minimum": -1,
               "maximum": 1
+            },
+            "addendum": {
+              "type": "number",
+              "title": "Addendum (x module)",
+              "description": "Tooth height above the pitch circle as a multiple of the module. 1 is standard",
+              "default": 1,
+              "minimum": 0.3,
+              "maximum": 2
+            },
+            "dedendum": {
+              "type": "number",
+              "title": "Dedendum (x module)",
+              "description": "Tooth depth below the pitch circle as a multiple of the module. 1.25 is standard",
+              "default": 1.25,
+              "minimum": 0.3,
+              "maximum": 2.5
             }
           }
         },
@@ -100,6 +118,8 @@
             "teeth",
             "pressure_angle",
             "face_width",
+            "addendum",
+            "dedendum",
             "body_height"
           ],
           "properties": {
@@ -152,6 +172,22 @@
               "minimum": 0.1,
               "maximum": 1000,
               "unit": "mm"
+            },
+            "addendum": {
+              "type": "number",
+              "title": "Addendum (x module)",
+              "description": "Tooth height above the pitch line as a multiple of the module. 1 is standard",
+              "default": 1,
+              "minimum": 0.3,
+              "maximum": 2
+            },
+            "dedendum": {
+              "type": "number",
+              "title": "Dedendum (x module)",
+              "description": "Tooth depth below the pitch line as a multiple of the module. 1.25 is standard",
+              "default": 1.25,
+              "minimum": 0.3,
+              "maximum": 2.5
             }
           }
         },

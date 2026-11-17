@@ -39,10 +39,14 @@ All sizes are millimetres. The entry ids (`gears`, `racks`) are lowercase becaus
 | `teeth` | 20 | Tooth count z, 8 to 80 |
 | `face_width` | 10 | Gear thickness |
 | `pressure_angle` | 20 | Pressure angle in degrees, 10 to 30 |
+| `addendum` | 1 | Addendum coefficient ha: tooth height above the pitch circle, in modules, 0.3 to 2 |
+| `dedendum` | 1.25 | Dedendum coefficient hf: tooth depth below the pitch circle, in modules, 0.3 to 2.5 |
 | `bore_diameter` | 0 | Centre hole; 0 means none |
 | `profile_shift` | 0 | Profile shift coefficient x, -1 to 1 |
 
-The gear sits on the XY plane, centred on the origin, extruded up along +Z. The reply gives the pitch, base, outer and root diameters.
+The gear sits on the XY plane, centred on the origin, extruded up along +Z. The reply gives the pitch, base, outer and root diameters, and the addendum and dedendum used.
+
+`addendum` and `dedendum` are multiples of the module, so they scale with it: with module 2 and the defaults the teeth stand 2 mm above and 2.5 mm below the pitch circle. Outer diameter is m (z + 2 ha + 2 x) and root diameter is m (z - 2 hf + 2 x), x being the profile shift. They do not change the tooth thickness on the pitch circle.
 
 ### racks
 
@@ -53,13 +57,15 @@ The gear sits on the XY plane, centred on the origin, extruded up along +Z. The 
 | `teeth` | 10 | Tooth count, 1 to 100. Length is teeth x pi x m |
 | `pressure_angle` | 20 | Pressure angle in degrees, 10 to 30 |
 | `face_width` | 10 | Rack thickness |
+| `addendum` | 1 | Addendum coefficient ha: tooth height above the pitch line, in modules, 0.3 to 2 |
+| `dedendum` | 1.25 | Dedendum coefficient hf: tooth depth below the pitch line, in modules, 0.3 to 2.5 |
 | `body_height` | 6 | Material below the root line |
 
-The rack lies along +X on the XY plane, from x = 0 to its length, extruded up along +Z. Its pitch line is y = 0 and its teeth point towards +Y (tips at y = m, roots at y = -1.25 m, back at y = -1.25 m - body height). The reply gives the pitch, length and total height.
+The rack lies along +X on the XY plane, from x = 0 to its length, extruded up along +Z. Its pitch line is y = 0 and its teeth point towards +Y (tips at y = ha m, roots at y = -hf m, back at y = -hf m - body height). The reply gives the pitch, length and total height, and the addendum and dedendum used.
 
 ### Making them mesh
 
-Use the same module and pressure angle for both. A gear from **Gears** meshes with a rack from **Racks** when the gear's centre is at (x, m z / 2), where z is the gear's tooth count. The rack then travels pi m z for each turn of the gear. Both parts are built on the XY plane, so move the gear's component to that centre (or constrain it there in an assembly) to line them up.
+Use the same module and pressure angle for both, and keep some clearance: the addendum of one part should be smaller than the dedendum of the other, by 0.25 modules in the standard system (addendum 1, dedendum 1.25). If you change the addendum on one part, change the dedendum of the mating one to match. A gear from **Gears** meshes with a rack from **Racks** when the gear's centre is at (x, m z / 2), where z is the gear's tooth count. The rack then travels pi m z for each turn of the gear. Both parts are built on the XY plane, so move the gear's component to that centre (or constrain it there in an assembly) to line them up.
 
 ### From the command line
 
@@ -86,17 +92,19 @@ Use `"entry": "racks"` for a rack.
 
 **gears**
 
-- Standard full-depth teeth: addendum 1 m, dedendum 1.25 m, so with no shift the outer diameter is m (z + 2) and the root diameter m (z - 2.5).
-- Profile shift x moves the cutter: outer diameter m (z + 2 + 2x), root diameter m (z - 2.5 + 2x), and the tooth thickness on the pitch circle becomes m (pi/2 + 2 x tan a).
+- Full-depth teeth by default: addendum 1 m, dedendum 1.25 m (both adjustable with `addendum` and `dedendum`), so with no shift the outer diameter is m (z + 2 ha) and the root diameter m (z - 2 hf).
+- Profile shift x moves the cutter: outer diameter m (z + 2 ha + 2x), root diameter m (z - 2 hf + 2x), and the tooth thickness on the pitch circle becomes m (pi/2 + 2 x tan a).
 - Each flank is an involute of the base circle (radius m z cos a / 2), drawn as a spline through 10 points computed exactly from the involute equations. Below the base circle (small tooth counts) the flank continues radially.
 - The root fillet is a circle of 0.3 m tangent to both the root circle and the flank. It is an approximation of the true trochoidal root a hob would cut, and it shrinks on its own if the gap is too narrow.
 - The build extrudes one tooth wedge onto a hub and repeats it with a circular pattern, which gets slow as the count grows, so the tooth count is capped at 80 to stay inside the host's 30 second limit.
 
 **racks**
 
-- The straight-flanked limit of the involute: flanks inclined at the pressure angle, addendum 1 m, dedendum 1.25 m, circular pitch pi m. Tooth thickness on the pitch line is pi m / 2, and the tooth is m (pi/2 - 2 tan a) wide at the tip.
+- The straight-flanked limit of the involute: flanks inclined at the pressure angle, addendum 1 m and dedendum 1.25 m by default, circular pitch pi m. Addendum and dedendum are adjustable. Tooth thickness on the pitch line is pi m / 2, and the tooth is m (pi/2 - 2 ha tan a) wide at the tip.
 - The whole outline is one closed polyline (4 edges per tooth), extruded once. There is no pattern, so long racks stay cheap; the cap of 100 teeth is only there because every edge is one host command.
 - Each part's features carry its name (`<name> tooth profile`, `<name> tooth`, `<name> bore`), so two gears in one design do not get mixed up.
+
+If a combination of addendum, dedendum, pressure angle and profile shift would make a tooth come to a point or make neighbouring teeth touch at the root, the plugin stops with a message that names the field to change.
 
 Not modelled: undercut for very small tooth counts (hence the minimum of 8), backlash, helical or bevel teeth, tip relief, and for racks a root fillet and profile shift.
 
@@ -125,7 +133,7 @@ tests/         end to end test through solidcraft-cli
 
 ## Releases
 
-Pushing a tag like `v0.4.3` runs `.github/workflows/release.yml`, which builds the plugin and attaches `solidcraft-gears-0.4.3.zip` and `solidcraft-gears-0.4.3.zip.sha256` to a GitHub release. The version in `Cargo.toml` and `plugin.json` has to match the tag.
+Pushing a tag like `v0.5.0` runs `.github/workflows/release.yml`, which builds the plugin and attaches `solidcraft-gears-0.5.0.zip` and `solidcraft-gears-0.5.0.zip.sha256` to a GitHub release. The version in `Cargo.toml` and `plugin.json` has to match the tag.
 
 ## License
 
