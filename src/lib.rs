@@ -72,6 +72,18 @@ pub fn make_gear<R: Runner>(r: &mut R, p: &Params, name: &str) -> Result<Value, 
             json!({"diameter": p.bore, "height": p.face_width, "operation": "cut", "name": format!("{name} bore")}),
         )?;
     }
+    // The pitch circle, as construction geometry in a sketch of its own: a reference to dimension
+    // from or to mesh with, never extruded. It sits in the middle of the body (half the face width
+    // up from the XY plane the profile was drawn on) and comes last so it cannot take part in the tooth.
+    r.run(
+        "sketch.create",
+        json!({"plane": "XY", "offset": p.face_width / 2.0, "name": format!("{name} pitch circle")}),
+    )?;
+    r.run(
+        "sketch.circle.center",
+        json!({"center": [0.0, 0.0], "radius": d.pitch_d / 2.0, "construction": true}),
+    )?;
+    r.run("sketch.finish", json!({}))?;
     r.run("component.activate", json!({"component": "root"}))?;
     Ok(json!({
         "component": name,
@@ -117,6 +129,14 @@ pub fn make_rack<R: Runner>(r: &mut R, p: &RackParams, name: &str) -> Result<Val
         "solid.extrude",
         json!({"distance": p.face_width, "profiles": "all", "operation": "new", "name": name, "body_name": name}),
     )?;
+    // The pitch line (y = 0), as construction geometry in a sketch of its own, never extruded. It
+    // sits in the middle of the body, half the face width up from the XY plane of the profile.
+    r.run(
+        "sketch.create",
+        json!({"plane": "XY", "offset": p.face_width / 2.0, "name": format!("{name} pitch line")}),
+    )?;
+    r.run("sketch.line", json!({"points": [[0.0, 0.0], [d.length, 0.0]], "construction": true}))?;
+    r.run("sketch.finish", json!({}))?;
     r.run("component.activate", json!({"component": "root"}))?;
     Ok(json!({
         "component": name,
@@ -253,16 +273,20 @@ mod tests {
         let mut r = Rec(vec![]);
         let out = make_rack(&mut r, &p, "Rack").unwrap();
         let names: Vec<&str> = r.0.iter().map(|(c, _)| c.as_str()).collect();
-        // component, sketch, 4 lines per tooth + 4 for the ends and body, finish, extrude, back to root
+        // component, sketch, 4 lines per tooth + 4 for the ends and body, finish, extrude, the pitch
+        // line sketch (create, line, finish), back to root
         assert_eq!(names.first(), Some(&"component.create"));
         assert_eq!(names[1], "sketch.create");
-        assert_eq!(names.iter().filter(|c| **c == "sketch.line").count(), 4 * 5 + 4);
-        assert_eq!(names[names.len() - 3], "sketch.finish");
-        assert_eq!(names[names.len() - 2], "solid.extrude");
-        assert_eq!(names.last(), Some(&"component.activate"));
+        assert_eq!(names.iter().filter(|c| **c == "sketch.line").count(), 4 * 5 + 4 + 1);
+        assert_eq!(
+            &names[names.len() - 6..],
+            &["sketch.finish", "solid.extrude", "sketch.create", "sketch.line", "sketch.finish", "component.activate"][..]
+        );
         assert!((out["length"].as_f64().unwrap() - 5.0 * PI_2()).abs() < 1e-9);
-        // every line joins the previous one end to start (closed loop)
-        let lines: Vec<&Value> = r.0.iter().filter(|(c, _)| c == "sketch.line").map(|(_, a)| a).collect();
+        // every line of the outline joins the previous one end to start (closed loop); the pitch line
+        // is construction geometry and stands apart
+        let lines: Vec<&Value> =
+            r.0.iter().filter(|(c, a)| c == "sketch.line" && a.get("construction").is_none()).map(|(_, a)| a).collect();
         for i in 0..lines.len() {
             assert_eq!(lines[i]["points"][1], lines[(i + 1) % lines.len()]["points"][0]);
         }
@@ -433,6 +457,87 @@ mod tests {
         let out = make(&mut g, &parse_request(GEARS, &json!({"module": 2, "teeth": 20, "addendum": 1.2, "dedendum": 1.5})).unwrap()).unwrap();
         assert!((out["outer_diameter"].as_f64().unwrap() - 44.8).abs() < 1e-9);
         assert!((out["root_diameter"].as_f64().unwrap() - 34.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_pitch_circle_is_construction_geometry_in_its_own_sketch() {
+        let mut r = Rec(vec![]);
+        let mut v = json!({"module": 2, "teeth": 20, "bore_diameter": 6});
+        v["name"] = json!("Pinion");
+        make(&mut r, &parse_request(GEARS, &v).unwrap()).unwrap();
+        let names: Vec<&str> = r.0.iter().map(|(c, _)| c.as_str()).collect();
+        // last three steps before returning to the root: sketch, circle, finish
+        assert_eq!(&names[names.len() - 4..], &["sketch.create", "sketch.circle.center", "sketch.finish", "component.activate"][..]);
+        let n = r.0.len();
+        assert_eq!(r.0[n - 4].1, json!({"plane": "XY", "offset": 5.0, "name": "Pinion pitch circle"}));
+        // pitch diameter m z = 40, so radius 20, centred on the origin, construction
+        assert_eq!(r.0[n - 3].1, json!({"center": [0.0, 0.0], "radius": 20.0, "construction": true}));
+        // it comes after the tooth, the pattern and the bore, so none of them can pick it up
+        let at = |c: &str| names.iter().position(|x| *x == c).unwrap();
+        assert!(at("solid.pattern.circular") < n - 4);
+        assert_eq!(names.iter().filter(|c| **c == "sketch.circle.center").count(), 1);
+        assert_eq!(names.iter().filter(|c| **c == "solid.extrude").count(), 1);
+    }
+
+    #[test]
+    fn the_pitch_line_is_construction_geometry_in_its_own_sketch() {
+        let mut r = Rec(vec![]);
+        let mut v = json!({"module": 2, "teeth": 5});
+        v["name"] = json!("Bar");
+        make(&mut r, &parse_request(RACKS, &v).unwrap()).unwrap();
+        let n = r.0.len();
+        let names: Vec<&str> = r.0.iter().map(|(c, _)| c.as_str()).collect();
+        assert_eq!(&names[n - 5..], &["solid.extrude", "sketch.create", "sketch.line", "sketch.finish", "component.activate"][..]);
+        assert_eq!(r.0[n - 4].1, json!({"plane": "XY", "offset": 5.0, "name": "Bar pitch line"}));
+        // along the whole rack on y = 0: length 5 pi m
+        let line = &r.0[n - 3].1;
+        assert_eq!(line["construction"], json!(true));
+        assert_eq!(line["points"][0], json!([0.0, 0.0]));
+        assert!((line["points"][1][0].as_f64().unwrap() - 5.0 * PI_2()).abs() < 1e-9);
+        assert_eq!(line["points"][1][1], json!(0.0));
+        // only the outline sketch is extruded
+        assert_eq!(names.iter().filter(|c| **c == "solid.extrude").count(), 1);
+    }
+
+    #[test]
+    fn every_command_the_plugin_sends_is_allowed_by_the_manifest() {
+        let m: Value = serde_json::from_str(include_str!("../plugin.json")).unwrap();
+        let allowed: Vec<&str> = m["runtime"]["commands"].as_array().unwrap().iter().map(|c| c.as_str().unwrap()).collect();
+        let mut sent: Vec<String> = Vec::new();
+        for (entry, v) in [(GEARS, json!({"bore_diameter": 6})), (RACKS, json!({"teeth": 3}))] {
+            let mut r = Rec(vec![]);
+            make(&mut r, &parse_request(entry, &v).unwrap()).unwrap();
+            sent.extend(r.0.into_iter().map(|(c, _)| c));
+        }
+        for c in &sent {
+            assert!(allowed.contains(&c.as_str()), "{c} is not in the manifest's commands");
+        }
+        // and the manifest asks for nothing the plugin does not use
+        for c in &allowed {
+            assert!(sent.iter().any(|s| s == c), "{c} is allowed but never sent");
+        }
+    }
+
+    #[test]
+    fn the_construction_geometry_is_in_the_middle_of_the_body() {
+        // half the face width above the plane of the profile, whatever the thickness
+        for width in [3.0, 7.0, 10.0, 24.0] {
+            let mut g = Rec(vec![]);
+            make(&mut g, &parse_request(GEARS, &json!({"face_width": width})).unwrap()).unwrap();
+            let mut k = Rec(vec![]);
+            make(&mut k, &parse_request(RACKS, &json!({"face_width": width, "teeth": 3})).unwrap()).unwrap();
+            for r in [&g, &k] {
+                // the body runs from z = 0 to z = width ...
+                let ext: Vec<&Value> = r.0.iter().filter(|(c, _)| c == "solid.extrude").map(|(_, a)| a).collect();
+                assert_eq!(ext.len(), 1);
+                assert_eq!(ext[0]["distance"].as_f64().unwrap(), width);
+                // ... the profile sketch is on the plane itself, the construction sketch half way up
+                let sketches: Vec<&Value> = r.0.iter().filter(|(c, _)| c == "sketch.create").map(|(_, a)| a).collect();
+                assert_eq!(sketches.len(), 2);
+                assert!(sketches[0].get("offset").is_none(), "the profile stays on the XY plane");
+                assert_eq!(sketches[1]["offset"].as_f64().unwrap(), width / 2.0);
+            }
+        }
     }
 
     #[allow(non_snake_case)]

@@ -2,9 +2,7 @@
 
 # SolidCraft Gears
 
-Based on [solidcraft-gears](https://github.com/bherbruck/solidcraft-gears) by bherbruck (MIT). This version adds racks, one component per part, and separate Gears and Racks menu entries.
-
-An involute spur gear and rack generator for [SolidCraft](https://github.com/tangency-labs/solidcraft). The plugin adds two items to SolidCraft's plugins menu, **Gears** and **Racks**. Each one opens a dialog, draws the profile in a sketch and extrudes it, using ordinary SolidCraft commands. What lands in your design is a normal timeline (a sketch, an extrude, and for gears a hub, a circular pattern and an optional bore), so you can open any of those features afterwards and change them. It is not a mesh.
+An involute spur gear and rack generator for [SolidCraft](https://github.com/tangency-labs/solidcraft). The plugin adds two items to SolidCraft's plugins menu, **Gears** and **Racks**. Each one opens a dialog, draws the profile in a sketch and extrudes it, using ordinary SolidCraft commands. What lands in your design is a normal timeline (a sketch, an extrude, and for gears a hub, a circular pattern and an optional bore), so you can open any of those features afterwards and change them. It is not a mesh. Each part also gets its pitch circle (gears) or pitch line (racks) as construction geometry, in the middle of the body, to dimension from or constrain to.
 
 Every run builds its part **in its own component**, so a gear and a rack (or two gears) stay independent and can be moved, constrained and exported separately.
 
@@ -46,7 +44,7 @@ All sizes are millimetres. The entry ids (`gears`, `racks`) are lowercase becaus
 | `bore_diameter` | 0 | Centre hole; 0 means none |
 | `profile_shift` | 0 | Profile shift coefficient x, -1 to 1 |
 
-The gear sits on the XY plane, centred on the origin, extruded up along +Z. The reply gives the pitch, base, outer and root diameters, and the addendum and dedendum used.
+The gear sits on the XY plane, centred on the origin, extruded up along +Z. Its pitch circle (diameter m z, centred on the origin) is drawn as a construction circle in a sketch called `<name> pitch circle`, on a plane half the face width above the XY plane, so it sits in the middle of the body's thickness. The reply gives the pitch, base, outer and root diameters, and the addendum and dedendum used.
 
 `addendum` and `dedendum` are multiples of the module, so they scale with it: with module 2 and the defaults the teeth stand 2 mm above and 2.5 mm below the pitch circle. Outer diameter is m (z + 2 ha + 2 x) and root diameter is m (z - 2 hf + 2 x), x being the profile shift. They do not change the tooth thickness on the pitch circle.
 
@@ -63,7 +61,7 @@ The gear sits on the XY plane, centred on the origin, extruded up along +Z. The 
 | `dedendum` | 1.25 | Dedendum coefficient hf: tooth depth below the pitch line, in modules, 0.3 to 2.5 |
 | `body_height` | 6 | Material below the root line |
 
-The rack lies along +X on the XY plane, from x = 0 to its length, extruded up along +Z. Its pitch line is y = 0 and its teeth point towards +Y (tips at y = ha m, roots at y = -hf m, back at y = -hf m - body height). The reply gives the pitch, length and total height, and the addendum and dedendum used.
+The rack lies along +X on the XY plane, from x = 0 to its length, extruded up along +Z. Its pitch line is y = 0 and its teeth point towards +Y (tips at y = ha m, roots at y = -hf m, back at y = -hf m - body height). The pitch line is drawn as a construction line along the whole rack in a sketch called `<name> pitch line`, on a plane half the face width above the XY plane, in the middle of the rack's thickness. The reply gives the pitch, length and total height, and the addendum and dedendum used.
 
 ### Making them mesh
 
@@ -104,7 +102,8 @@ Use `"entry": "racks"` for a rack.
 
 - The straight-flanked limit of the involute: flanks inclined at the pressure angle, addendum 1 m and dedendum 1.25 m by default, circular pitch pi m. Addendum and dedendum are adjustable. Tooth thickness on the pitch line is pi m / 2, and the tooth is m (pi/2 - 2 ha tan a) wide at the tip.
 - The whole outline is one closed polyline (4 edges per tooth), extruded once. There is no pattern, so long racks stay cheap; the cap of 100 teeth is only there because every edge is one host command.
-- Each part's features carry its name (`<name> tooth profile`, `<name> tooth`, `<name> bore`), so two gears in one design do not get mixed up.
+- Each part's features carry its name (`<name> tooth profile`, `<name> tooth`, `<name> bore`, `<name> pitch circle`, `<name> pitch line`), so two gears in one design do not get mixed up.
+- The pitch circle and the pitch line are construction geometry in a sketch of their own, on a plane at mid-thickness (offset face width / 2 from the plane the profile was drawn on), made last, so they are never extruded and cannot take part in the tooth or the pattern.
 
 If a combination of addendum, dedendum, pressure angle and profile shift would make a tooth come to a point or make neighbouring teeth touch at the root, the plugin stops with a message that names the field to change.
 
@@ -112,7 +111,7 @@ Not modelled: undercut for very small tooth counts (hence the minimum of 8), bac
 
 ## Tests
 
-`cargo test` checks the math (diameters, tooth thickness at the pitch circle and pitch line, flank angle, that the profiles close up), the commands each entry sends (one component per run, named after the part, back to the root at the end), parameter validation, and the manifest (entry ids, field order, description length).
+`cargo test` checks the math (diameters, tooth thickness at the pitch circle and pitch line, flank angle, that the profiles close up), the commands each entry sends (one component per run, named after the part, the construction sketch of the pitch circle or line, back to the root at the end, and that every command sent is allowed by the manifest), parameter validation, and the manifest (entry ids, field order, description length).
 
 `tests/cli_test.py` runs the built plugin through `solidcraft-cli`, saves each design, and measures the result: one closed solid in its own component, the tooth count from the number of tip faces, the outer diameter from the largest cylinder, the bore, the face width, the pitch diameter by cutting a thin ring around d = m z out of the gear, and for racks the length, the height and the volume.
 
@@ -135,7 +134,7 @@ tests/         end to end test through solidcraft-cli
 
 ## Releases
 
-Pushing a tag like `v0.5.0` runs `.github/workflows/release.yml`, which builds the plugin and attaches `solidcraft-gears-0.5.0.zip` and `solidcraft-gears-0.5.0.zip.sha256` to a GitHub release. The version in `Cargo.toml` and `plugin.json` has to match the tag.
+Pushing a tag like `v0.6.1` runs `.github/workflows/release.yml`, which builds the plugin and attaches `solidcraft-gears-0.6.1.zip` and `solidcraft-gears-0.6.1.zip.sha256` to a GitHub release. The version in `Cargo.toml` and `plugin.json` has to match the tag.
 
 ## License
 

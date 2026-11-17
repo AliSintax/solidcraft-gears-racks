@@ -1,8 +1,8 @@
 {
   "id": "solidcraft-gears",
   "name": "Gears",
-  "version": "0.5.0",
-  "description": "Involute spur gear and rack generator with adjustable addendum and dedendum. Each part is built in its own component as an editable sketch and features.",
+  "version": "0.6.1",
+  "description": "Involute spur gear and rack generator with adjustable addendum and dedendum. Each part is built in its own component, with its pitch circle or pitch line as construction geometry at mid-thickness.",
   "capabilities": [
     "commands@0.1"
   ],
@@ -203,6 +203,7 @@
       "component.activate",
       "component.create",
       "sketch.arc.three_point",
+      "sketch.circle.center",
       "sketch.create",
       "sketch.finish",
       "sketch.line",
